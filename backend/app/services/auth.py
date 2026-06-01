@@ -39,15 +39,34 @@ async def exchange_code_and_login(db: Session, code: str) -> str:
                 "client_secret": settings.koyun_oauth_client_secret,
                 "redirect_uri": settings.koyun_oauth_redirect_uri,
             },
-            headers={"Accept": "application/json"},
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": "curl/8.5.0",
+            },
         )
-        token_resp.raise_for_status()
+        if token_resp.status_code >= 400:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"OAuth token failed: {token_resp.status_code} {token_resp.text[:800]}",
+            )
         access_token = token_resp.json().get("access_token")
         if not access_token:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="OAuth token response did not include access_token")
 
-        user_resp = await client.get(settings.koyun_oauth_userinfo_url, headers={"Authorization": f"Bearer {access_token}"})
-        user_resp.raise_for_status()
+        user_resp = await client.get(
+            settings.koyun_oauth_userinfo_url,
+            headers={
+                "Authorization": f"Bearer {access_token}",
+                "Accept": "application/json",
+                "User-Agent": "curl/8.5.0",
+            },
+        )
+        if user_resp.status_code >= 400:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"OAuth userinfo failed: {user_resp.status_code} {user_resp.text[:800]}",
+            )
         profile = normalize_koyun_profile(user_resp.json())
 
     user = upsert_user(db, profile)

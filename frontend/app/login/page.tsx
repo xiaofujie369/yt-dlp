@@ -1,13 +1,13 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ShieldCheck } from "lucide-react";
 
 import { API_BASE, setToken } from "@/lib/api";
 import { LinkButton } from "@/components/ui";
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
   const params = useSearchParams();
 
@@ -31,10 +31,27 @@ export default function LoginPage() {
             <p className="text-sm text-slate-600">登录后继续使用下载队列。</p>
           </div>
         </div>
+
         <LinkButton href={`${API_BASE}/api/auth/login`} className="w-full">
           使用可云账户登录
         </LinkButton>
       </section>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="grid min-h-screen place-items-center p-4">
+          <section className="w-full max-w-md rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
+            <p className="text-sm text-slate-600">正在加载登录页面...</p>
+          </section>
+        </main>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }

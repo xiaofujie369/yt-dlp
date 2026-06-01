@@ -16,7 +16,7 @@ def heartbeat(redis: Redis, worker_id: str) -> None:
 
 
 def main() -> None:
-    redis = Redis.from_url(settings.redis_url, decode_responses=True)
+    redis = Redis.from_url(settings.redis_url, decode_responses=False)
     worker_id = f"{socket.gethostname()}:{time.time_ns()}"
     threading.Thread(target=heartbeat, args=(redis, worker_id), daemon=True).start()
     worker = Worker(["downloads:vip", "downloads"], connection=redis)
