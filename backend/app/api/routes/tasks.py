@@ -12,7 +12,7 @@ from app.models.all_models import User
 from app.schemas.common import Page
 from app.schemas.tasks import FileOut, TaskCreate, TaskCreated, TaskOut
 from app.services.rate_limit import check_ip_blacklist, enforce_ip_hourly_limit
-from app.services.tasks import cancel_task, create_task, get_download_file, get_user_task, list_user_tasks, soft_delete_task
+from app.services.tasks import cancel_task, create_task, get_download_file, get_user_task, list_user_tasks, retry_task, soft_delete_task
 
 router = APIRouter(tags=["tasks"])
 
@@ -63,6 +63,16 @@ def cancel_user_task(
     user: Annotated[User, Depends(get_current_user)],
 ):
     return cancel_task(db, redis, get_user_task(db, user, task_id))
+
+
+@router.post("/tasks/{task_id}/retry", response_model=TaskOut)
+def retry_user_task(
+    task_id: str,
+    db: Annotated[Session, Depends(get_db)],
+    redis: Annotated[Redis, Depends(get_redis)],
+    user: Annotated[User, Depends(get_current_user)],
+):
+    return retry_task(db, redis, get_user_task(db, user, task_id))
 
 
 @router.delete("/tasks/{task_id}", status_code=204)

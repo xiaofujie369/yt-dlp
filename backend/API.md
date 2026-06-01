@@ -30,6 +30,7 @@ Errors are returned as:
 - `GET /api/tasks?page=1&page_size=20`
 - `GET /api/tasks/{task_id}`
 - `POST /api/tasks/{task_id}/cancel`
+- `POST /api/tasks/{task_id}/retry`
 - `DELETE /api/tasks/{task_id}`
 - `GET /api/files/{file_id}/download`
 

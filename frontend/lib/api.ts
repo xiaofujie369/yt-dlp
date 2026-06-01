@@ -19,7 +19,9 @@ export type Task = {
   title?: string | null;
   filename?: string | null;
   file_size?: number | null;
+  file_id?: number | null;
   error_message?: string | null;
+  cancelled_at?: string | null;
   expired_at?: string | null;
   created_at: string;
   updated_at: string;

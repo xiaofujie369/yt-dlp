@@ -38,6 +38,7 @@ export default function TaskDetailPage() {
   }, [params.task_id]);
 
   async function cancel() {
+    if (!window.confirm("确定要取消这个下载任务吗？正在执行的 yt-dlp 进程会被终止。")) return;
     const next = await api<Task>(`/tasks/${params.task_id}/cancel`, { method: "POST" });
     setTask(next);
   }

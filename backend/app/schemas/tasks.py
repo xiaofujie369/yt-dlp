@@ -36,7 +36,9 @@ class TaskOut(BaseModel):
     error_message: str | None
     started_at: datetime | None
     completed_at: datetime | None
+    cancelled_at: datetime | None
     expired_at: datetime | None
+    file_id: int | None = None
     created_at: datetime
     updated_at: datetime
 

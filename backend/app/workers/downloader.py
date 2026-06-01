@@ -1,6 +1,8 @@
 import os
 import re
 import subprocess
+import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -23,9 +25,18 @@ def download_task(task_id: str) -> None:
     if not task:
         db.close()
         return
+    if task.status == TaskStatus.CANCELLED or redis.get(f"task:{task.task_id}:cancel"):
+        task.status = TaskStatus.CANCELLED
+        task.cancelled_at = task.cancelled_at or datetime.now(UTC)
+        task.completed_at = task.completed_at or task.cancelled_at
+        db.commit()
+        db.close()
+        redis.close()
+        return
 
     output_dir = Path(settings.download_dir) / task.task_id
     output_dir.mkdir(parents=True, exist_ok=True)
+    process: subprocess.Popen | None = None
 
     try:
         task.status = TaskStatus.DOWNLOADING
@@ -42,18 +53,20 @@ def download_task(task_id: str) -> None:
             bufsize=1,
             env={**os.environ, "LC_ALL": "C.UTF-8"},
         )
+        redis.set(f"task:{task.task_id}:pid", str(process.pid), ex=settings.task_timeout_seconds + 300)
+        threading.Thread(target=watch_cancel, args=(redis, task.task_id, process), daemon=True).start()
 
         assert process.stdout is not None
         for line in process.stdout:
             if redis.get(f"task:{task.task_id}:cancel"):
-                process.terminate()
-                task.status = TaskStatus.CANCELLED
-                task.completed_at = datetime.now(UTC)
-                db.commit()
+                mark_cancelled(db, task)
                 return
             update_progress(db, redis, task, line)
 
         return_code = process.wait(timeout=10)
+        if redis.get(f"task:{task.task_id}:cancel"):
+            mark_cancelled(db, task)
+            return
         if return_code != 0:
             raise RuntimeError(f"yt-dlp exited with code {return_code}")
 
@@ -64,6 +77,9 @@ def download_task(task_id: str) -> None:
         redis.set(f"task:{task.task_id}:progress", "100", ex=3600)
         db.commit()
     except Exception as exc:
+        if redis.get(f"task:{task.task_id}:cancel"):
+            mark_cancelled(db, task)
+            return
         task.status = TaskStatus.FAILED
         task.error_message = str(exc)[:2000]
         task.completed_at = datetime.now(UTC)
@@ -71,6 +87,7 @@ def download_task(task_id: str) -> None:
         db.commit()
         raise
     finally:
+        redis.delete(f"task:{task.task_id}:pid")
         db.close()
         redis.close()
 
@@ -120,6 +137,33 @@ def pick_downloaded_file(output_dir: Path) -> Path | None:
     if not files:
         return None
     return max(files, key=lambda item: item.stat().st_mtime)
+
+
+def watch_cancel(redis: Redis, task_id: str, process: subprocess.Popen) -> None:
+    while process.poll() is None:
+        if redis.get(f"task:{task_id}:cancel"):
+            terminate_process(process)
+            return
+        time.sleep(0.5)
+
+
+def terminate_process(process: subprocess.Popen) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=8)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=8)
+
+
+def mark_cancelled(db, task: DownloadTask) -> None:
+    now = datetime.now(UTC)
+    task.status = TaskStatus.CANCELLED
+    task.cancelled_at = task.cancelled_at or now
+    task.completed_at = task.completed_at or now
+    db.commit()
 
 
 def _setting(db, key: str, default: str) -> str:

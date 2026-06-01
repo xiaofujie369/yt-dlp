@@ -59,10 +59,18 @@ class DownloadTask(Base, TimestampMixin):
     user_agent: Mapped[str | None] = mapped_column(String(500))
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expired_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     user: Mapped[User] = relationship(back_populates="tasks")
     files: Mapped[list["DownloadFile"]] = relationship(back_populates="task")
+
+    @property
+    def file_id(self) -> int | None:
+        for file in self.files:
+            if file.status == "active":
+                return file.id
+        return None
 
 
 class DownloadFile(Base, TimestampMixin):

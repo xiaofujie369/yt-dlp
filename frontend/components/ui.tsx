@@ -46,7 +46,7 @@ export function Badge({ children, tone = "neutral" }: { children: ReactNode; ton
 export function statusTone(status: string): "green" | "red" | "yellow" | "blue" | "neutral" {
   if (status === "completed") return "green";
   if (["failed", "cancelled", "deleted", "expired"].includes(status)) return "red";
-  if (status === "queued") return "yellow";
-  if (["downloading", "merging", "transcoding"].includes(status)) return "blue";
+  if (["pending", "queued"].includes(status)) return "yellow";
+  if (["running", "downloading", "processing", "merging", "transcoding"].includes(status)) return "blue";
   return "neutral";
 }

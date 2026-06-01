@@ -19,7 +19,7 @@ from app.schemas.auth import UserOut
 from app.schemas.common import Page
 from app.schemas.tasks import FileOut, TaskOut
 from app.services.audit import log_admin_action
-from app.services.tasks import cancel_task, get_queue, soft_delete_task
+from app.services.tasks import cancel_task, retry_task, soft_delete_task
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -109,10 +109,7 @@ def admin_retry_task(
     admin: Annotated[User, Depends(require_admin)],
 ):
     task = _task_or_404(db, task_id)
-    task.status = "queued"
-    task.progress = 0
-    task.error_message = None
-    get_queue(redis, task.user).enqueue("app.workers.downloader.download_task", task.task_id, job_id=task.task_id)
+    task = retry_task(db, redis, task)
     log_admin_action(db, admin, "task.retry", "task", task_id, ip=request.client.host if request.client else None)
     db.commit()
     return task

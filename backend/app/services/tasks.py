@@ -15,7 +15,24 @@ from app.schemas.tasks import TaskCreate
 from app.services.settings import get_int_setting
 from app.utils.url import domain_matches, parse_public_url
 
-ACTIVE_STATUSES = [TaskStatus.QUEUED, TaskStatus.DOWNLOADING, TaskStatus.MERGING, TaskStatus.TRANSCODING]
+ACTIVE_STATUSES = [
+    TaskStatus.QUEUED,
+    TaskStatus.DOWNLOADING,
+    TaskStatus.MERGING,
+    TaskStatus.TRANSCODING,
+    "pending",
+    "running",
+    "processing",
+]
+CANCELLABLE_STATUSES = {str(status) for status in ACTIVE_STATUSES}
+RETRYABLE_STATUSES = {str(TaskStatus.FAILED), str(TaskStatus.CANCELLED), "failed", "cancelled"}
+NON_CANCELLABLE_STATUSES = {
+    str(TaskStatus.COMPLETED),
+    str(TaskStatus.FAILED),
+    str(TaskStatus.CANCELLED),
+    str(TaskStatus.EXPIRED),
+    str(TaskStatus.DELETED),
+}
 
 
 def get_queue(redis: Redis, user: User | None = None) -> Queue:
@@ -96,14 +113,42 @@ def get_user_task(db: Session, user: User, task_id: str) -> DownloadTask:
 
 
 def cancel_task(db: Session, redis: Redis, task: DownloadTask) -> DownloadTask:
-    if task.status in {TaskStatus.COMPLETED, TaskStatus.FAILED, TaskStatus.CANCELLED}:
-        return task
-    task.status = TaskStatus.CANCELLED
-    task.completed_at = datetime.now(UTC)
+    if task.status in NON_CANCELLABLE_STATUSES:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Task in {task.status} status cannot be cancelled")
+    if task.status not in CANCELLABLE_STATUSES:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Task in {task.status} status cannot be cancelled")
+
+    now = datetime.now(UTC)
     redis.set(f"task:{task.task_id}:cancel", "1", ex=settings.task_timeout_seconds)
+    task.status = TaskStatus.CANCELLED
+    task.cancelled_at = now
+    task.completed_at = now
+    task.error_message = None
+
     job = get_queue(redis).fetch_job(task.task_id) or Queue("downloads:vip", connection=redis).fetch_job(task.task_id)
     if job:
         job.cancel()
+    db.commit()
+    return task
+
+
+def retry_task(db: Session, redis: Redis, task: DownloadTask) -> DownloadTask:
+    if task.status not in RETRYABLE_STATUSES:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=f"Task in {task.status} status cannot be retried")
+
+    redis.delete(f"task:{task.task_id}:cancel")
+    for queue in (get_queue(redis), Queue("downloads:vip", connection=redis)):
+        existing_job = queue.fetch_job(task.task_id)
+        if existing_job:
+            existing_job.delete()
+
+    task.status = TaskStatus.QUEUED
+    task.progress = 0
+    task.error_message = None
+    task.started_at = None
+    task.completed_at = None
+    task.cancelled_at = None
+    get_queue(redis, task.user).enqueue("app.workers.downloader.download_task", task.task_id, job_id=task.task_id)
     db.commit()
     return task
 
