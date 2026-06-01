@@ -1,0 +1,97 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-koyun_ytdlp}
+      POSTGRES_USER: ${POSTGRES_USER:-koyun_ytdlp}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-change_me}
+    volumes:
+      - ./data/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-koyun_ytdlp} -d ${POSTGRES_DB:-koyun_ytdlp}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-koyun_ytdlp}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-koyun_ytdlp}
+      REDIS_URL: redis://redis:6379/0
+      DOWNLOAD_DIR: /data/downloads
+    volumes:
+      - ./data/downloads:/data/downloads
+      - ./logs:/app/logs
+    ports:
+      - "127.0.0.1:8100:8100"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8100"
+
+  worker:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-koyun_ytdlp}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-koyun_ytdlp}
+      REDIS_URL: redis://redis:6379/0
+      DOWNLOAD_DIR: /data/downloads
+    volumes:
+      - ./data/downloads:/data/downloads
+      - ./logs:/app/logs
+    depends_on:
+      backend:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    command: ["python", "-m", "app.workers.runner"]
+
+  scheduler:
+    build: ./backend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-koyun_ytdlp}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-koyun_ytdlp}
+      REDIS_URL: redis://redis:6379/0
+      DOWNLOAD_DIR: /data/downloads
+    volumes:
+      - ./data/downloads:/data/downloads
+      - ./logs:/app/logs
+    depends_on:
+      backend:
+        condition: service_started
+    command: ["python", "-m", "app.workers.scheduler"]
+
+  frontend:
+    build: ./frontend
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${APP_URL:-http://localhost:8100}
+    ports:
+      - "127.0.0.1:3100:3100"
+    depends_on:
+      - backend
+
+volumes:
+  redis-data:

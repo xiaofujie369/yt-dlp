@@ -1,0 +1,6 @@
+download.shy521.com {
+    encode gzip zstd
+
+    reverse_proxy /api/* 127.0.0.1:8100
+    reverse_proxy 127.0.0.1:3100
+}
