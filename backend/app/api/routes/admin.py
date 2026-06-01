@@ -21,7 +21,7 @@ from app.schemas.tasks import FileOut, TaskOut
 from app.services.audit import log_admin_action
 from app.services.tasks import cancel_task, retry_task, soft_delete_task
 
-router = APIRouter(prefix="/admin", tags=["admin"])
+router = APIRouter(prefix="/admin", tags=["admin"], dependencies=[Depends(require_admin)])
 
 
 @router.get("/dashboard", response_model=DashboardOut)

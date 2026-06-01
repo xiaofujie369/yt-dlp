@@ -74,6 +74,12 @@ docker compose exec backend alembic upgrade head
 
 ## 创建管理员
 
+启动时会自动把 `ADMIN_EMAILS` 中配置的邮箱提升为管理员，默认包含 `4869150@qq.com`。也可以按邮箱手动创建或提升：
+
+```sh
+docker compose exec backend python -m app.scripts.make_admin --email 4869150@qq.com
+```
+
 可云 OAuth 登录后，可以按可云用户 ID 提升管理员：
 
 ```sh

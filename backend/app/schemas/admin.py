@@ -1,6 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
+
+from app.core.enums import RuleType, UserRole, UserStatus
 
 
 class DashboardOut(BaseModel):
@@ -26,12 +28,47 @@ class UserPatch(BaseModel):
     daily_quota: int | None = None
     used_today: int | None = None
 
+    @field_validator("role")
+    @classmethod
+    def validate_role(cls, value: str | None) -> str | None:
+        if value is not None and value not in {role.value for role in UserRole}:
+            raise ValueError("role must be one of user, vip, admin")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str | None) -> str | None:
+        if value is not None and value not in {status.value for status in UserStatus}:
+            raise ValueError("status must be one of active, disabled")
+        return value
+
+    @field_validator("daily_quota", "used_today")
+    @classmethod
+    def validate_non_negative(cls, value: int | None) -> int | None:
+        if value is not None and value < 0:
+            raise ValueError("quota values cannot be negative")
+        return value
+
 
 class DomainRuleIn(BaseModel):
     domain: str
     rule_type: str
     status: str = "active"
     remark: str | None = None
+
+    @field_validator("rule_type")
+    @classmethod
+    def validate_rule_type(cls, value: str) -> str:
+        if value not in {rule.value for rule in RuleType}:
+            raise ValueError("rule_type must be allow or deny")
+        return value
+
+    @field_validator("status")
+    @classmethod
+    def validate_rule_status(cls, value: str) -> str:
+        if value not in {"active", "disabled"}:
+            raise ValueError("status must be active or disabled")
+        return value
 
 
 class DomainRuleOut(DomainRuleIn):

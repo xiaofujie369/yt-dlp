@@ -5,6 +5,7 @@ from fastapi.responses import JSONResponse
 from app.api.routes import admin, auth, tasks
 from app.core.config import settings
 from app.core.database import SessionLocal
+from app.services.admins import promote_admin_emails
 from app.services.settings import seed_defaults
 
 app = FastAPI(title="Koyun yt-dlp API", version="1.0.0")
@@ -27,6 +28,7 @@ def startup() -> None:
     db = SessionLocal()
     try:
         seed_defaults(db)
+        promote_admin_emails(db)
     finally:
         db.close()
 

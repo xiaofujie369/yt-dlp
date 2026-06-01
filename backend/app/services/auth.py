@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.enums import UserRole
 from app.models.all_models import User
+from app.services.admins import parse_admin_emails
 from app.utils.security import create_access_token
 
 
@@ -90,6 +91,9 @@ def normalize_koyun_profile(payload: dict) -> dict:
 def upsert_user(db: Session, profile: dict) -> User:
     user = db.query(User).filter(User.koyun_user_id == profile["koyun_user_id"]).first()
     role = profile.get("role") if profile.get("role") in {UserRole.USER, UserRole.VIP, UserRole.ADMIN} else None
+    email = (profile.get("email") or "").lower()
+    if email and email in parse_admin_emails():
+        role = UserRole.ADMIN
     if user:
         user.email = profile["email"]
         user.username = profile["username"]

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     jwt_secret: str = "change_me_long_random_string"
     jwt_algorithm: str = "HS256"
     jwt_expires_minutes: int = 10080
+    admin_emails: str = "4869150@qq.com"
 
     koyun_oauth_client_id: str = ""
     koyun_oauth_client_secret: str = ""
