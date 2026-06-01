@@ -35,7 +35,7 @@ class User(Base, TimestampMixin):
     allow_audio: Mapped[bool] = mapped_column(Boolean, default=True)
     allow_thumbnail: Mapped[bool] = mapped_column(Boolean, default=True)
     allow_subtitle: Mapped[bool] = mapped_column(Boolean, default=True)
-    allow_playlist: Mapped[bool] = mapped_column(Boolean, default=False)
+    allow_playlist: Mapped[bool] = mapped_column(Boolean, default=True)
     allow_batch: Mapped[bool] = mapped_column(Boolean, default=False)
     allowed_platforms: Mapped[str | None] = mapped_column(Text)
     denied_platforms: Mapped[str | None] = mapped_column(Text)

@@ -23,7 +23,7 @@ ROLE_PERMISSION_TEMPLATES = {
         "allow_audio": True,
         "allow_thumbnail": True,
         "allow_subtitle": True,
-        "allow_playlist": False,
+        "allow_playlist": True,
         "allow_batch": False,
     },
     UserRole.VIP: {
@@ -124,4 +124,15 @@ def parse_platform_list(value: str | None) -> list[str]:
 def looks_like_playlist(url: str) -> bool:
     parsed = urlparse(url)
     query = parse_qs(parsed.query)
-    return "list" in query or "/playlist" in parsed.path.lower()
+    if "/playlist" in parsed.path.lower():
+        return True
+    if "list" not in query:
+        return False
+    # YouTube often appends ?list=... to a normal single-video URL. With --no-playlist
+    # yt-dlp will download the selected video, so do not block that common case.
+    hostname = normalize_domain(parsed.hostname or "")
+    if hostname in {"youtube.com", "m.youtube.com"} and query.get("v"):
+        return False
+    if hostname == "youtu.be" and parsed.path.strip("/"):
+        return False
+    return True
