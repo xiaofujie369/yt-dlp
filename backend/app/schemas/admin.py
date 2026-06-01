@@ -27,6 +27,21 @@ class UserPatch(BaseModel):
     status: str | None = None
     daily_quota: int | None = None
     used_today: int | None = None
+    max_concurrent_tasks: int | None = None
+    max_file_size_mb: int | None = None
+    max_duration_minutes: int | None = None
+    file_retention_hours: int | None = None
+    allow_video: bool | None = None
+    allow_audio: bool | None = None
+    allow_thumbnail: bool | None = None
+    allow_subtitle: bool | None = None
+    allow_playlist: bool | None = None
+    allow_batch: bool | None = None
+    allowed_platforms: str | None = None
+    denied_platforms: str | None = None
+    remark: str | None = None
+    banned_reason: str | None = None
+    banned_until: datetime | None = None
 
     @field_validator("role")
     @classmethod
@@ -42,12 +57,35 @@ class UserPatch(BaseModel):
             raise ValueError("status must be one of active, disabled")
         return value
 
-    @field_validator("daily_quota", "used_today")
+    @field_validator(
+        "daily_quota",
+        "used_today",
+        "max_concurrent_tasks",
+        "max_file_size_mb",
+        "max_duration_minutes",
+        "file_retention_hours",
+    )
     @classmethod
     def validate_non_negative(cls, value: int | None) -> int | None:
         if value is not None and value < 0:
             raise ValueError("quota values cannot be negative")
         return value
+
+
+class AddQuotaIn(BaseModel):
+    amount: int
+
+    @field_validator("amount")
+    @classmethod
+    def validate_positive_amount(cls, value: int) -> int:
+        if value <= 0:
+            raise ValueError("amount must be positive")
+        return value
+
+
+class BanUserIn(BaseModel):
+    reason: str
+    banned_until: datetime | None = None
 
 
 class DomainRuleIn(BaseModel):

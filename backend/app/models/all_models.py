@@ -1,6 +1,6 @@
 from datetime import UTC, datetime
 
-from sqlalchemy import BigInteger, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -27,6 +27,21 @@ class User(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), default="active")
     daily_quota: Mapped[int] = mapped_column(Integer, default=5)
     used_today: Mapped[int] = mapped_column(Integer, default=0)
+    max_concurrent_tasks: Mapped[int] = mapped_column(Integer, default=1)
+    max_file_size_mb: Mapped[int] = mapped_column(Integer, default=500)
+    max_duration_minutes: Mapped[int] = mapped_column(Integer, default=60)
+    file_retention_hours: Mapped[int] = mapped_column(Integer, default=24)
+    allow_video: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_audio: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_thumbnail: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_subtitle: Mapped[bool] = mapped_column(Boolean, default=True)
+    allow_playlist: Mapped[bool] = mapped_column(Boolean, default=False)
+    allow_batch: Mapped[bool] = mapped_column(Boolean, default=False)
+    allowed_platforms: Mapped[str | None] = mapped_column(Text)
+    denied_platforms: Mapped[str | None] = mapped_column(Text)
+    remark: Mapped[str | None] = mapped_column(Text)
+    banned_reason: Mapped[str | None] = mapped_column(Text)
+    banned_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     total_tasks: Mapped[int] = mapped_column(Integer, default=0)
     success_tasks: Mapped[int] = mapped_column(Integer, default=0)
     failed_tasks: Mapped[int] = mapped_column(Integer, default=0)

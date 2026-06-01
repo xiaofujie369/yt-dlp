@@ -37,6 +37,24 @@ export type User = {
   status: string;
   daily_quota: number;
   used_today: number;
+  max_concurrent_tasks: number;
+  max_file_size_mb: number;
+  max_duration_minutes: number;
+  file_retention_hours: number;
+  allow_video: boolean;
+  allow_audio: boolean;
+  allow_thumbnail: boolean;
+  allow_subtitle: boolean;
+  allow_playlist: boolean;
+  allow_batch: boolean;
+  allowed_platforms?: string | null;
+  denied_platforms?: string | null;
+  remark?: string | null;
+  banned_reason?: string | null;
+  banned_until?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  last_login_at?: string | null;
 };
 
 export function getToken() {

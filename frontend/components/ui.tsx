@@ -1,6 +1,6 @@
 import { clsx } from "clsx";
 import Link from "next/link";
-import type { ButtonHTMLAttributes, ReactNode } from "react";
+import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 
 export function Button({ className, ...props }: ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
@@ -28,8 +28,8 @@ export function LinkButton({ href, children, className }: { href: string; childr
   );
 }
 
-export function Card({ children, className }: { children: ReactNode; className?: string }) {
-  return <section className={clsx("rounded-lg border border-slate-200 bg-white p-5 shadow-sm", className)}>{children}</section>;
+export function Card({ children, className, ...props }: HTMLAttributes<HTMLElement> & { children: ReactNode }) {
+  return <section className={clsx("rounded-lg border border-slate-200 bg-white p-5 shadow-sm", className)} {...props}>{children}</section>;
 }
 
 export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: "green" | "red" | "yellow" | "blue" | "neutral" }) {

@@ -12,7 +12,6 @@ from app.core.config import settings
 from app.core.database import SessionLocal
 from app.core.enums import TaskStatus, TaskType
 from app.models.all_models import DownloadTask
-from app.services.settings import get_int_setting
 from app.services.tasks import mark_task_completed
 
 PROGRESS_RE = re.compile(r"\[download]\s+(\d+(?:\.\d+)?)%")
@@ -94,7 +93,7 @@ def download_task(task_id: str) -> None:
 
 def build_command(task: DownloadTask, output_dir: Path, db) -> list[str]:
     limit_rate = _setting(db, "limit_rate", settings.default_limit_rate)
-    max_filesize = get_int_setting(db, "vip_max_filesize_mb" if task.user.role == "vip" else "user_max_filesize_mb", settings.default_max_filesize_mb)
+    max_filesize = task.user.max_file_size_mb
     output_template = str(output_dir / "%(title).150B-%(id)s.%(ext)s")
     common = [
         "yt-dlp",
@@ -105,6 +104,8 @@ def build_command(task: DownloadTask, output_dir: Path, db) -> list[str]:
         limit_rate,
         "--max-filesize",
         f"{max_filesize}M",
+        "--match-filter",
+        f"duration <= {task.user.max_duration_minutes * 60}",
         "-o",
         output_template,
     ]

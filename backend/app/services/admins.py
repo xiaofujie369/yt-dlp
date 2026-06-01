@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.enums import UserRole, UserStatus
 from app.models.all_models import User
+from app.services.user_permissions import apply_role_template
 
 
 def parse_admin_emails(raw: str | None = None) -> set[str]:
@@ -22,6 +23,7 @@ def promote_admin_emails(db: Session) -> int:
         if user.role != UserRole.ADMIN or user.status != UserStatus.ACTIVE:
             user.role = UserRole.ADMIN
             user.status = UserStatus.ACTIVE
+            apply_role_template(user)
             changed += 1
     if changed:
         db.commit()
@@ -38,13 +40,14 @@ def make_admin_by_email(db: Session, email: str, username: str | None = None) ->
             username=username or normalized_email.split("@", 1)[0],
             role=UserRole.ADMIN,
             status=UserStatus.ACTIVE,
-            daily_quota=9999,
         )
+        apply_role_template(user)
         db.add(user)
         db.flush()
     else:
         user.role = UserRole.ADMIN
         user.status = UserStatus.ACTIVE
+        apply_role_template(user)
         if username:
             user.username = username
     db.commit()

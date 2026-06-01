@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from app.core.database import SessionLocal
 from app.core.enums import UserRole
 from app.models.all_models import User
+from app.services.user_permissions import apply_role_template
 
 
 def main() -> None:
@@ -22,13 +23,14 @@ def main() -> None:
                 email=args.email,
                 username=args.username,
                 role=UserRole.ADMIN,
-                daily_quota=9999,
                 last_login_at=datetime.now(UTC),
             )
+            apply_role_template(user)
             db.add(user)
         else:
             user.role = UserRole.ADMIN
             user.status = "active"
+            apply_role_template(user)
         db.commit()
         print(f"admin ready: id={user.id} koyun_user_id={user.koyun_user_id}")
     finally:

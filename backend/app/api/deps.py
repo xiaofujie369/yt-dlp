@@ -18,12 +18,12 @@ def get_current_user(
     payload = decode_access_token(authorization.split(" ", 1)[1])
     user_id = payload.get("sub")
     user = db.get(User, int(user_id)) if user_id else None
-    if not user or user.status != UserStatus.ACTIVE:
+    if not user or user.status == UserStatus.DISABLED:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User is not active")
     return user
 
 
 def require_admin(user: Annotated[User, Depends(get_current_user)]) -> User:
-    if user.role != UserRole.ADMIN:
+    if user.role != UserRole.ADMIN or user.status != UserStatus.ACTIVE:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin role required")
     return user

@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.enums import TaskStatus, TaskType, UserRole
 from app.models.all_models import DomainRule, DownloadFile, DownloadTask, User
 from app.schemas.tasks import TaskCreate
-from app.services.settings import get_int_setting
+from app.services.user_permissions import enforce_user_download_permissions
 from app.utils.url import domain_matches, parse_public_url
 
 ACTIVE_STATUSES = [
@@ -43,8 +43,7 @@ def get_queue(redis: Redis, user: User | None = None) -> Queue:
 def create_task(db: Session, redis: Redis, user: User, payload: TaskCreate, client_ip: str | None, user_agent: str | None) -> DownloadTask:
     raw_url, domain = parse_public_url(payload.url)
     enforce_domain_rules(db, domain)
-    enforce_user_quota(db, user)
-    enforce_user_concurrency(db, user)
+    enforce_user_download_permissions(db, user, payload.task_type, raw_url, domain)
     if payload.task_type == TaskType.AUDIO and not _setting_bool(db, "allow_mp3", True):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="MP3 downloads are disabled")
     if payload.task_type == TaskType.SUBTITLE and not _setting_bool(db, "allow_subtitle", False):
@@ -82,19 +81,17 @@ def enforce_domain_rules(db: Session, domain: str) -> None:
 
 
 def enforce_user_quota(db: Session, user: User) -> None:
-    quota = get_int_setting(db, "vip_daily_quota" if user.role == UserRole.VIP else "user_daily_quota", user.daily_quota)
-    if user.used_today >= quota:
+    if user.used_today >= user.daily_quota:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Daily download quota exceeded")
 
 
 def enforce_user_concurrency(db: Session, user: User) -> None:
-    limit = get_int_setting(db, "max_concurrent_tasks_per_user", 2)
     active = (
         db.query(func.count(DownloadTask.id))
         .filter(DownloadTask.user_id == user.id, DownloadTask.status.in_([str(item) for item in ACTIVE_STATUSES]))
         .scalar()
     )
-    if active >= limit:
+    if active >= user.max_concurrent_tasks:
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many active tasks")
 
 
@@ -176,7 +173,7 @@ def get_download_file(db: Session, user: User, file_id: int) -> DownloadFile:
 
 
 def mark_task_completed(db: Session, task: DownloadTask, file_path: Path, file_size: int) -> None:
-    retention_hours = get_int_setting(db, "vip_retention_hours" if task.user.role == UserRole.VIP else "user_retention_hours", 24)
+    retention_hours = task.user.file_retention_hours
     expires_at = datetime.now(UTC) + timedelta(hours=retention_hours)
     task.status = TaskStatus.COMPLETED
     task.progress = 100

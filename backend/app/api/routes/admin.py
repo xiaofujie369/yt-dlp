@@ -1,4 +1,3 @@
-import shutil
 import subprocess
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -14,7 +13,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.core.redis import get_redis
 from app.models.all_models import DailyStat, DomainRule, DownloadFile, DownloadTask, IPBlacklist, OperationLog, SystemSetting, User
-from app.schemas.admin import DashboardOut, DomainRuleIn, DomainRuleOut, IPBlacklistIn, IPBlacklistOut, SettingPatch, UserPatch
+from app.schemas.admin import AddQuotaIn, BanUserIn, DashboardOut, DomainRuleIn, DomainRuleOut, IPBlacklistIn, IPBlacklistOut, SettingPatch, UserPatch
 from app.schemas.auth import UserOut
 from app.schemas.common import Page
 from app.schemas.tasks import FileOut, TaskOut
@@ -123,31 +122,179 @@ def admin_delete_task(task_id: str, db: Annotated[Session, Depends(get_db)], adm
 
 
 @router.get("/users", response_model=Page[UserOut])
-def users(db: Annotated[Session, Depends(get_db)], _: Annotated[User, Depends(require_admin)], page: int = 1, page_size: int = 20):
+def users(
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+    role: str | None = None,
+    status_filter: str | None = Query(None, alias="status"),
+    email: str | None = None,
+    username: str | None = None,
+    q: str | None = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
     query = db.query(User)
+    if role:
+        query = query.filter(User.role == role)
+    if status_filter:
+        query = query.filter(User.status == status_filter)
+    if email:
+        query = query.filter(User.email.ilike(f"%{email}%"))
+    if username:
+        query = query.filter(User.username.ilike(f"%{username}%"))
+    if q:
+        like = f"%{q}%"
+        query = query.filter(or_(User.email.ilike(like), User.username.ilike(like), User.koyun_user_id.ilike(like)))
     total = query.count()
     items = query.order_by(User.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
     return Page(items=items, total=total, page=page, page_size=page_size)
 
 
-@router.get("/users/{user_id}", response_model=UserOut)
+@router.get("/users/{user_id}")
 def user_detail(user_id: int, db: Annotated[Session, Depends(get_db)], _: Annotated[User, Depends(require_admin)]):
-    user = db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+    user = _user_or_404(db, user_id)
+    stats = {
+        "total_tasks": db.query(func.count(DownloadTask.id)).filter(DownloadTask.user_id == user_id).scalar() or 0,
+        "success_tasks": db.query(func.count(DownloadTask.id)).filter(DownloadTask.user_id == user_id, DownloadTask.status == "completed").scalar() or 0,
+        "failed_tasks": db.query(func.count(DownloadTask.id)).filter(DownloadTask.user_id == user_id, DownloadTask.status == "failed").scalar() or 0,
+        "active_tasks": db.query(func.count(DownloadTask.id)).filter(
+            DownloadTask.user_id == user_id,
+            DownloadTask.status.in_(["pending", "queued", "running", "downloading", "processing", "merging", "transcoding"]),
+        ).scalar() or 0,
+    }
+    recent_tasks = db.query(DownloadTask).filter(DownloadTask.user_id == user_id).order_by(DownloadTask.created_at.desc()).limit(10).all()
+    recent_files = db.query(DownloadFile).filter(DownloadFile.user_id == user_id).order_by(DownloadFile.created_at.desc()).limit(10).all()
+    operation_logs = (
+        db.query(OperationLog)
+        .filter(OperationLog.target_type == "user", OperationLog.target_id == str(user_id))
+        .order_by(OperationLog.created_at.desc())
+        .limit(20)
+        .all()
+    )
+    return {
+        "user": user,
+        "stats": stats,
+        "recent_tasks": recent_tasks,
+        "recent_files": recent_files,
+        "operation_logs": operation_logs,
+    }
 
 
 @router.patch("/users/{user_id}", response_model=UserOut)
-def patch_user(user_id: int, payload: UserPatch, db: Annotated[Session, Depends(get_db)], admin: Annotated[User, Depends(require_admin)]):
-    user = db.get(User, user_id)
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
+def patch_user(
+    user_id: int,
+    payload: UserPatch,
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    admin: Annotated[User, Depends(require_admin)],
+):
+    user = _user_or_404(db, user_id)
     for field, value in payload.model_dump(exclude_unset=True).items():
         setattr(user, field, value)
-    log_admin_action(db, admin, "user.patch", "user", str(user_id))
+    log_user_action(db, admin, request, "user.patch", user_id, payload.model_dump_json(exclude_unset=True))
     db.commit()
     return user
+
+
+@router.post("/users/{user_id}/apply-role-template", response_model=UserOut)
+def apply_user_role_template(user_id: int, request: Request, db: Annotated[Session, Depends(get_db)], admin: Annotated[User, Depends(require_admin)]):
+    from app.services.user_permissions import apply_role_template
+
+    user = _user_or_404(db, user_id)
+    apply_role_template(user)
+    log_user_action(db, admin, request, "user.apply_role_template", user_id, f"role={user.role}")
+    db.commit()
+    return user
+
+
+@router.post("/users/{user_id}/reset-quota", response_model=UserOut)
+def reset_user_quota(user_id: int, request: Request, db: Annotated[Session, Depends(get_db)], admin: Annotated[User, Depends(require_admin)]):
+    user = _user_or_404(db, user_id)
+    user.used_today = 0
+    log_user_action(db, admin, request, "user.reset_quota", user_id)
+    db.commit()
+    return user
+
+
+@router.post("/users/{user_id}/add-quota", response_model=UserOut)
+def add_user_quota(user_id: int, payload: AddQuotaIn, request: Request, db: Annotated[Session, Depends(get_db)], admin: Annotated[User, Depends(require_admin)]):
+    user = _user_or_404(db, user_id)
+    user.daily_quota += payload.amount
+    log_user_action(db, admin, request, "user.add_quota", user_id, f"amount={payload.amount}")
+    db.commit()
+    return user
+
+
+@router.post("/users/{user_id}/disable", response_model=UserOut)
+def disable_user(user_id: int, request: Request, db: Annotated[Session, Depends(get_db)], admin: Annotated[User, Depends(require_admin)]):
+    user = _user_or_404(db, user_id)
+    user.status = "disabled"
+    log_user_action(db, admin, request, "user.disable", user_id)
+    db.commit()
+    return user
+
+
+@router.post("/users/{user_id}/enable", response_model=UserOut)
+def enable_user(user_id: int, request: Request, db: Annotated[Session, Depends(get_db)], admin: Annotated[User, Depends(require_admin)]):
+    user = _user_or_404(db, user_id)
+    user.status = "active"
+    user.banned_reason = None
+    user.banned_until = None
+    log_user_action(db, admin, request, "user.enable", user_id)
+    db.commit()
+    return user
+
+
+@router.post("/users/{user_id}/ban", response_model=UserOut)
+def ban_user(user_id: int, payload: BanUserIn, request: Request, db: Annotated[Session, Depends(get_db)], admin: Annotated[User, Depends(require_admin)]):
+    user = _user_or_404(db, user_id)
+    user.status = "banned"
+    user.banned_reason = payload.reason
+    user.banned_until = payload.banned_until
+    log_user_action(db, admin, request, "user.ban", user_id, payload.model_dump_json())
+    db.commit()
+    return user
+
+
+@router.post("/users/{user_id}/unban", response_model=UserOut)
+def unban_user(user_id: int, request: Request, db: Annotated[Session, Depends(get_db)], admin: Annotated[User, Depends(require_admin)]):
+    user = _user_or_404(db, user_id)
+    user.status = "active"
+    user.banned_reason = None
+    user.banned_until = None
+    log_user_action(db, admin, request, "user.unban", user_id)
+    db.commit()
+    return user
+
+
+@router.get("/users/{user_id}/tasks", response_model=Page[TaskOut])
+def user_tasks(
+    user_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    _user_or_404(db, user_id)
+    query = db.query(DownloadTask).filter(DownloadTask.user_id == user_id)
+    total = query.count()
+    items = query.order_by(DownloadTask.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return Page(items=items, total=total, page=page, page_size=page_size)
+
+
+@router.get("/users/{user_id}/files", response_model=Page[FileOut])
+def user_files(
+    user_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _: Annotated[User, Depends(require_admin)],
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+):
+    _user_or_404(db, user_id)
+    query = db.query(DownloadFile).filter(DownloadFile.user_id == user_id)
+    total = query.count()
+    items = query.order_by(DownloadFile.created_at.desc()).offset((page - 1) * page_size).limit(page_size).all()
+    return Page(items=items, total=total, page=page, page_size=page_size)
 
 
 @router.get("/files", response_model=Page[FileOut])
@@ -281,6 +428,26 @@ def _task_or_404(db: Session, task_id: str) -> DownloadTask:
     if not task:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
     return task
+
+
+def _user_or_404(db: Session, user_id: int) -> User:
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return user
+
+
+def log_user_action(db: Session, admin: User, request: Request, action: str, user_id: int, detail: str | None = None) -> None:
+    log_admin_action(
+        db,
+        admin,
+        action,
+        "user",
+        str(user_id),
+        detail=detail,
+        ip=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
 
 
 def _command_version(command: list[str]) -> str:

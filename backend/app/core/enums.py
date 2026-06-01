@@ -10,6 +10,8 @@ class UserRole(StrEnum):
 class UserStatus(StrEnum):
     ACTIVE = "active"
     DISABLED = "disabled"
+    BANNED = "banned"
+    READONLY = "readonly"
 
 
 class TaskStatus(StrEnum):

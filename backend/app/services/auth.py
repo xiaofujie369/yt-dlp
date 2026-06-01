@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.core.enums import UserRole
 from app.models.all_models import User
 from app.services.admins import parse_admin_emails
+from app.services.user_permissions import apply_role_template
 from app.utils.security import create_access_token
 
 
@@ -98,8 +99,9 @@ def upsert_user(db: Session, profile: dict) -> User:
         user.email = profile["email"]
         user.username = profile["username"]
         user.avatar = profile["avatar"]
-        if role:
+        if role and user.role != role:
             user.role = role
+            apply_role_template(user)
         user.last_login_at = datetime.now(UTC)
         return user
 
@@ -109,9 +111,9 @@ def upsert_user(db: Session, profile: dict) -> User:
         username=profile["username"],
         avatar=profile["avatar"],
         role=role or UserRole.USER,
-        daily_quota=50 if role == UserRole.VIP else 5,
         last_login_at=datetime.now(UTC),
     )
+    apply_role_template(user)
     db.add(user)
     db.flush()
     return user
