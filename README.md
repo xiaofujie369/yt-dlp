@@ -1,3 +1,23 @@
+# koyun-ytdlp-service
+
+A self-hosted video/audio downloading and processing service based on yt-dlp.
+
+This project focuses on making yt-dlp easier to deploy and operate as a private web service. It includes practical work around Docker deployment, API integration, background task processing, download job management, file handling, logging, and production reliability.
+
+## Project Goals
+
+- Provide a self-hosted video/audio processing backend
+- Support API-based download and processing workflows
+- Improve Docker-based deployment and maintenance
+- Add safer task execution and file handling for user-submitted URLs
+- Make yt-dlp easier to use in private SaaS or internal tool scenarios
+
+## Why this fork exists
+
+The upstream yt-dlp project is a powerful command-line tool. This fork is maintained for service-oriented deployment scenarios, where yt-dlp is used as part of a web/API backend with task queues, storage management, and operational security requirements.
+
+---
+
 <!-- MANPAGE: BEGIN EXCLUDED SECTION -->
 <div align="center">
 
